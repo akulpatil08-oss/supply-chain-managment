@@ -1,0 +1,6 @@
+{
+  "name": "AegisChain | Autonomous Hazard Self-Rerouting & Multimodal AI",
+  "description": "Autonomous hazard-limit self-rerouting platform for multimodal freight with real-time telematics, zero-trust digital ID verification, and explainable AI risk scoring.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
