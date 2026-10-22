@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as L from 'leaflet';
 import {
   ShieldAlert,
@@ -43,8 +43,18 @@ import {
   Timer,
   Gauge,
   FastForward,
-  ArrowRight
+  ArrowRight,
+  Code2,
+  PackageCheck,
+  Bot,
+  Search
 } from 'lucide-react';
+import AIAssistantWidget from './components/AIAssistantWidget.tsx';
+import DeveloperIntegrationModal from './components/DeveloperIntegrationModal.tsx';
+import UniversalSearchModal from './components/UniversalSearchModal.tsx';
+import Map3DVehicleOverlay from './components/Map3DVehicleOverlay.tsx';
+import ScannableQRCode from './components/ScannableQRCode.tsx';
+import { AWBShipmentRecord, INITIAL_AWB_DATABASE, getAWBShipment } from './data/awbShipments.ts';
 
 // ==========================================
 // TYPES & DATA STRUCTURES
@@ -58,6 +68,7 @@ export interface RiskFactors {
 
 export interface Carrier {
   id: string;
+  awbNumber: string;
   mode: 'air' | 'sea' | 'road';
   name: string;
   hubId: string;
@@ -69,6 +80,8 @@ export interface Carrier {
   riskFactors: RiskFactors;
   riskJustification: string;
   coords: [number, number];
+  headingDegrees: number;
+  altitudeMeters: number;
   captain: string;
   manifest: string;
   connectedShipmentId: string;
@@ -373,6 +386,7 @@ const INITIAL_HAZARDS: Hazard[] = [
 const INITIAL_FLEET: Carrier[] = [
   {
     id: "AC-AIR-501",
+    awbNumber: "098-4729104",
     mode: "air",
     name: "Boeing 777-F Cargo",
     hubId: "BLR",
@@ -389,6 +403,8 @@ const INITIAL_FLEET: Carrier[] = [
     },
     riskJustification: "Composite risk driven by FL360 volcanic ash plume (38/40). Jet turbine glassification danger mandates immediate detour over Arabian Gulf.",
     coords: [25.2, 55.3],
+    headingDegrees: 118,
+    altitudeMeters: 10972,
     captain: "Cmdr. Hans Meyer • LH-782",
     manifest: "Lithium Avionics & Vaccines (Cold-Chain)",
     connectedShipmentId: "AC-ROD-104",
@@ -403,6 +419,7 @@ const INITIAL_FLEET: Carrier[] = [
   },
   {
     id: "AC-ROD-104",
+    awbNumber: "125-8849201",
     mode: "road",
     name: "Volvo FH Reefer Rig",
     hubId: "BLR",
@@ -419,12 +436,64 @@ const INITIAL_FLEET: Carrier[] = [
     },
     riskJustification: "Nominal baseline parameters across the highway corridor. No immediate mitigation necessary.",
     coords: [15.3647, 75.1240],
+    headingDegrees: 334,
+    altitudeMeters: 620,
     captain: "Ramesh Kumar • KA-01-EQ-9801",
     manifest: "Vaccine Cartridges (Handoff from AC-AIR-501)",
     connectedShipmentId: "AC-AIR-501",
     interconnectDesc: "Feeder Truck waiting at BLR Intermodal Hub. Dock release auto-synchronized with inbound AC-AIR-501.",
-    path: [[13.1986, 77.7066], [14.4644, 75.9218], [15.3647, 75.1240], [18.9300, 72.8200]],
-    detourPath: [[13.1986, 77.7066], [15.3350, 76.1550], [16.8302, 75.7100], [18.9300, 72.8200]],
+    path: [
+      [13.1986, 77.7066], // Bengaluru Hub (Devanahalli)
+      [13.2250, 77.4520], // Nelamangala Expressway Junction
+      [13.3409, 77.1010], // Tumakuru NH-48 Bypass
+      [13.7447, 76.9077], // Sira
+      [13.9450, 76.6190], // Hiriyur Bypass
+      [14.2251, 76.3980], // Chitradurga Fortress Junction
+      [14.4644, 75.9218], // Davanagere NH-48 Tollway
+      [14.6231, 75.6239], // Ranebennur Bypass
+      [14.7967, 75.4024], // Haveri Bridge
+      [14.9856, 75.2530], // Bankapur Toll Plaza
+      [15.3647, 75.1240], // Hubballi Bypass (Hazard Basin)
+      [15.4589, 75.0078], // Dharwad Tollway
+      [15.5977, 74.7899], // Kittur
+      [15.8497, 74.4977], // Belagavi (Belgaum) Highway
+      [16.2625, 74.4842], // Sankeshwar
+      [16.4023, 74.3820], // Nipani Karnataka/Maharashtra Border
+      [16.5762, 74.3160], // Kagal Industrial Corridor
+      [16.7050, 74.2433], // Kolhapur NH-48 Bypass
+      [17.2885, 74.1831], // Karad Krishna River Crossing
+      [17.6805, 73.9995], // Satara Bypass
+      [18.1362, 73.9820], // Shirwal
+      [18.3512, 73.8540], // Khed Shivapur Toll Plaza
+      [18.5204, 73.8567], // Pune Katraj / Chandani Chowk Bypass
+      [18.7214, 73.7128], // Dehu Road (Mumbai-Pune Expressway)
+      [18.7557, 73.4091], // Lonavala / Khandala Bhor Ghat
+      [18.7891, 73.3440], // Khopoli Expressway Toll Plaza
+      [18.9894, 73.1175], // Panvel / Kalamboli Junction
+      [18.9300, 72.8200]  // Mumbai JNPT Terminal
+    ],
+    detourPath: [
+      [13.1986, 77.7066], // Bengaluru Hub
+      [13.2250, 77.4520], // Nelamangala
+      [13.3409, 77.1010], // Tumakuru
+      [13.7447, 76.9077], // Sira
+      [14.2251, 76.3980], // Chitradurga NH-50 Divergence
+      [14.9042, 76.3871], // Kudligi Junction
+      [15.2689, 76.3909], // Hosapete Bypass
+      [15.3456, 76.1550], // Koppal Logistics Corridor (NH-50)
+      [15.7592, 76.2001], // Kushtagi Highway
+      [15.9620, 76.1280], // Ilkal Flyover
+      [16.0590, 76.0550], // Hungund Tollway
+      [16.8302, 75.7100], // Vijayapura (Bijapur) Bypass
+      [17.6599, 75.9064], // Solapur NH-65 Junction
+      [17.8188, 75.6515], // Mohol
+      [18.1150, 75.0320], // Indapur
+      [18.5080, 73.9260], // Pune Hadapsar Bypass
+      [18.7214, 73.7128], // Mumbai-Pune Expressway Start
+      [18.7557, 73.4091], // Lonavala Ghat
+      [18.9894, 73.1175], // Panvel
+      [18.9300, 72.8200]  // Mumbai JNPT Terminal
+    ],
     cause: "Hubballi NH-48 flash flood hazard",
     solution: "Detour via NH-50 Koppal corridor with verified re-icing dry ice stop.",
     delay: "8.5 hrs",
@@ -448,7 +517,10 @@ const INITIAL_FLEET: Carrier[] = [
       trust: { name: "Carrier Escrow & Lloyd's Registry", score: 6, max: 15, detail: "Vessel IMO 9821045 fully accredited; escrow active." }
     },
     riskJustification: "Elevated sea swell (4.8m exceeds 3.5m safety limit) mandates detour south of Sri Lanka deep ocean trench.",
+    awbNumber: "312-6401925",
     coords: [4.10, 99.80],
+    headingDegrees: 298,
+    altitudeMeters: 0,
     captain: "Capt. Tan Wei • IMO 9821045",
     manifest: "Semiconductor Microchips (Reefer Containers)",
     connectedShipmentId: "AC-ROD-415",
@@ -472,6 +544,7 @@ const INITIAL_FLEET: Carrier[] = [
   },
   {
     id: "AC-ROD-415",
+    awbNumber: "176-3910482",
     mode: "road",
     name: "Express Freightliner",
     hubId: "MAA",
@@ -487,13 +560,45 @@ const INITIAL_FLEET: Carrier[] = [
       trust: { name: "Driver Identity Attestation", score: 3, max: 15, detail: "Driver FIDO2 key authenticated on terminal dock." }
     },
     riskJustification: "Optimal highway telemetry. Zero-threat status verified.",
-    coords: [12.9700, 79.1300],
+    coords: [12.9165, 79.1325],
+    headingDegrees: 262,
+    altitudeMeters: 310,
     captain: "K. Murugan • TN-02-CE-8812",
     manifest: "Semiconductor Modules (Connecting from AC-SEA-701)",
     connectedShipmentId: "AC-SEA-701",
     interconnectDesc: "Awaiting container discharge at Chennai Berth 4. Directly feeding Bengaluru assembly lines.",
-    path: [[13.0827, 80.3200], [12.9700, 79.1300], [13.1986, 77.7066]],
-    detourPath: [[13.0827, 80.3200], [12.8200, 79.6000], [13.1986, 77.7066]],
+    path: [
+      [13.0827, 80.3200], // Chennai Port Gateway
+      [13.0694, 80.1748], // Koyambedu / Maduravoyal Flyover
+      [13.0489, 80.0932], // Poonamallee Highway
+      [12.9675, 79.9436], // Sriperumbudur Industrial Hub
+      [12.8342, 79.7036], // Kanchipuram Bypass (NH-48)
+      [12.9298, 79.3582], // Walajapet Tollway
+      [12.9272, 79.3330], // Ranipet
+      [12.9165, 79.1325], // Vellore Katpadi Bypass
+      [12.8710, 78.9320], // Pallikonda Toll Plaza
+      [12.7904, 78.7166], // Ambur Leather Corridor
+      [12.6825, 78.6140], // Vaniyambadi Bypass
+      [12.6020, 78.5200], // Natrampalli
+      [12.5266, 78.2140], // Krishnagiri Toll Plaza
+      [12.7409, 77.8253], // Hosur SIPCOT Industrial Corridor
+      [12.7845, 77.7712], // Attibele Border Checkpost
+      [12.8452, 77.6602], // Electronic City Elevated Tollway
+      [12.9172, 77.6228], // Silk Board / ORR
+      [13.1986, 77.7066]  // Bengaluru Tech Park Hub
+    ],
+    detourPath: [
+      [13.0827, 80.3200], // Chennai Port
+      [13.1432, 79.9079], // Thiruvallur Bypass
+      [13.1784, 79.6105], // Tiruttani
+      [13.3300, 79.5850], // Nagari Highway
+      [13.2172, 79.1003], // Chittoor (NH-75)
+      [13.2005, 78.7533], // Palamaner Ghat Road
+      [13.1642, 78.3948], // Mulbagal
+      [13.1367, 78.1291], // Kolar Four-Lane Highway
+      [13.0712, 77.7983], // Hoskote Highway Junction
+      [13.1986, 77.7066]  // Bengaluru Tech Park Hub
+    ],
     cause: "Corridor Nominal",
     solution: "Express green corridor activated across NH-48 bypass.",
     delay: "0.0 hrs",
@@ -502,6 +607,7 @@ const INITIAL_FLEET: Carrier[] = [
   },
   {
     id: "AC-SEA-903",
+    awbNumber: "440-1092837",
     mode: "sea",
     name: "MV Gulf Pioneer Tanker",
     hubId: "BOM",
@@ -518,6 +624,8 @@ const INITIAL_FLEET: Carrier[] = [
     },
     riskJustification: "Nominal shipping lane across northern Arabian Sea.",
     coords: [25.60, 57.20],
+    headingDegrees: 132,
+    altitudeMeters: 0,
     captain: "Capt. Rashid Al-Maktoum • IMO 9745512",
     manifest: "Polymer Chemical Drums (18 TEU)",
     connectedShipmentId: "AC-ROD-309",
@@ -539,6 +647,7 @@ const INITIAL_FLEET: Carrier[] = [
   },
   {
     id: "AC-ROD-309",
+    awbNumber: "588-7204910",
     mode: "road",
     name: "Hazardous Tanker Unit",
     hubId: "BOM",
@@ -554,13 +663,48 @@ const INITIAL_FLEET: Carrier[] = [
       trust: { name: "Depot Inspector Attestation", score: 3, max: 15, detail: "Hazmat cargo pass verified." }
     },
     riskJustification: "Nominal highway conditions with low volatility index.",
-    coords: [20.6200, 72.9300],
+    coords: [20.5992, 72.9342],
+    headingDegrees: 4,
+    altitudeMeters: 45,
     captain: "Vikram Jadhav • MH-04-AZ-2019",
     manifest: "Specialty Chemicals (Connecting from AC-SEA-903)",
     connectedShipmentId: "AC-SEA-903",
     interconnectDesc: "Receives raw chemical consignment landed at Nhava Sheva. Dispatches via Western Freight Expressway.",
-    path: [[18.9300, 72.8200], [20.6200, 72.9300], [22.3072, 73.1812], [23.0225, 72.5714]],
-    detourPath: [[18.9300, 72.8200], [21.1702, 72.8311], [23.0225, 72.5714]],
+    path: [
+      [18.9300, 72.8200], // Mumbai JNPT Hub
+      [19.0330, 73.0297], // Navi Mumbai Palm Beach Road
+      [19.2600, 72.9780], // Thane / Ghodbunder Road
+      [19.4259, 72.8225], // Vasai-Virar Flyover
+      [19.7431, 72.9120], // Manor NH-48 Tollway
+      [20.1245, 72.9189], // Talasari Maharashtra/Gujarat Border
+      [20.3893, 72.9106], // Vapi Industrial Hub
+      [20.5992, 72.9342], // Valsad Highway
+      [20.9500, 72.9320], // Navsari NH-48 Bypass
+      [21.2680, 72.9560], // Surat Kamrej Junction
+      [21.6264, 73.0019], // Ankleshwar Chemical Corridor
+      [21.7051, 72.9959], // Bharuch Golden Bridge / Narmada
+      [22.0520, 73.1200], // Karjan Toll Plaza
+      [22.3072, 73.1812], // Vadodara (Baroda) Highway Junction
+      [22.5645, 72.9289], // Anand (Amul Expressway)
+      [22.6916, 72.8634], // Nadiad Bypass
+      [23.0225, 72.5714]  // Ahmedabad Industrial Park
+    ],
+    detourPath: [
+      [18.9300, 72.8200], // Mumbai JNPT
+      [19.2600, 72.9780], // Thane
+      [19.7431, 72.9120], // Manor
+      [19.9700, 72.7300], // Dahanu Coastal Corridor
+      [20.1800, 72.7600], // Umbergaon
+      [20.4000, 72.8500], // Daman Bypass
+      [20.5992, 72.9342], // Valsad
+      [21.1702, 72.8311], // Surat Hazira Port Expressway
+      [21.7100, 72.6000], // Dahej Petroleum Corridor
+      [22.0500, 72.8000], // Jambusar
+      [22.2400, 73.0800], // Padra Bypass
+      [22.3072, 73.1812], // Vadodara
+      [22.6916, 72.8634], // Nadiad
+      [23.0225, 72.5714]  // Ahmedabad Industrial Park
+    ],
     cause: "Expressway Clear",
     solution: "Hazard sensors armed, pressure nominal.",
     delay: "0.0 hrs",
@@ -575,9 +719,12 @@ export default function App() {
   const [hubs] = useState<Hub[]>(INITIAL_HUBS);
 
   const [selectedId, setSelectedId] = useState<string>("AC-AIR-501");
-  const [activeTab, setActiveTab] = useState<'map' | 'idcard' | 'cargo'>('map');
+  const [activeTab, setActiveTab] = useState<'map' | 'idcard' | 'cargo' | 'awb'>('map');
   const [activeRole, setActiveRole] = useState<'manager' | 'driver'>('manager');
   const [hubFilter, setHubFilter] = useState<string>('all');
+  const [isDevGuideOpen, setIsDevGuideOpen] = useState<boolean>(false);
+  const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
+  const [show3DMapOverlay, setShow3DMapOverlay] = useState<boolean>(true);
   
   // Real-Time Dynamic ETA State
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -589,6 +736,21 @@ export default function App() {
       setCurrentTime(new Date());
     }, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Global Command Palette Shortcut: Cmd/Ctrl + K or /
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchOpen(prev => !prev);
+      } else if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Banner & Auto-Reroute states
@@ -639,6 +801,22 @@ export default function App() {
 
   // Current selected carrier
   const currentCarrier = fleet.find(c => c.id === selectedId) || fleet[0];
+
+  // Active AWB Record linked to the selected carrier with real-time coordinates
+  const activeAWBRecord = useMemo<AWBShipmentRecord | null>(() => {
+    if (!currentCarrier) return null;
+    const lookupId = currentCarrier.awbNumber || currentCarrier.id;
+    const found = getAWBShipment(lookupId);
+    if (found) {
+      return {
+        ...found,
+        currentCoords: currentCarrier.coords,
+        headingDegrees: currentCarrier.headingDegrees ?? found.headingDegrees,
+        altitudeMeters: currentCarrier.altitudeMeters ?? found.altitudeMeters,
+      };
+    }
+    return null;
+  }, [currentCarrier]);
 
   // Dynamic Real-Time Estimated Arrival Calculations
   const baseSpeedKmH = parseSpeedToKmH(currentCarrier.tele.speed);
@@ -1050,6 +1228,7 @@ export default function App() {
 
     const newCarrier: Carrier = {
       id,
+      awbNumber: `AWB-${mode.toUpperCase()}-${Math.floor(100000 + Math.random() * 900000)}`,
       mode,
       name: `${product.slice(0, 18)} Unit`,
       hubId,
@@ -1066,6 +1245,8 @@ export default function App() {
       },
       riskJustification: "Nominal deployment into verified hub network.",
       coords: [midLat, midLng],
+      headingDegrees: Math.floor(Math.random() * 360),
+      altitudeMeters: mode === 'air' ? 10500 : mode === 'sea' ? 0 : 500,
       captain: driver,
       manifest: `${product} (${qty})`,
       connectedShipmentId: "AC-ROD-104",
@@ -1210,6 +1391,19 @@ export default function App() {
 
         {/* Right: Quick Action Controls */}
         <div className="flex items-center space-x-2">
+          {/* Universal Spotlight Search Button */}
+          <button
+            onClick={() => setIsSearchOpen(true)}
+            className="bg-[#050a18] hover:bg-[#142045] border border-cyan-500/50 hover:border-cyan-400 text-slate-300 hover:text-white px-2.5 sm:px-3 py-1.5 rounded-lg text-xs flex items-center space-x-2 transition shadow group"
+            title="Search any option, carrier, gateway, hazard, or action in AegisChain (⌘K)"
+          >
+            <Search className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span className="hidden md:inline font-medium text-slate-300">Search...</span>
+            <kbd className="hidden lg:inline-flex items-center text-[10px] font-mono text-cyan-400 bg-[#0c152e] border border-[#1d2f65] px-1 rounded">
+              ⌘K
+            </kbd>
+          </button>
+
           {/* Quick 1-Click Auto-Evasion Trigger */}
           <button
             onClick={() => triggerHazardLimitBreach("haz-bengal")}
@@ -1243,6 +1437,16 @@ export default function App() {
           >
             <PlusCircle className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">New Shipment</span>
+          </button>
+
+          {/* Developer Integration Guide */}
+          <button
+            onClick={() => setIsDevGuideOpen(true)}
+            className="bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-400/40 text-indigo-300 text-xs font-semibold px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition shadow"
+            title="Hackathon Developer Integration Guide (Express backend, 3D WebGL, Mod-7 AWB)"
+          >
+            <Code2 className="w-3.5 h-3.5 text-indigo-300" />
+            <span className="hidden sm:inline">Dev Guide</span>
           </button>
 
           {/* Disruption Simulator Button */}
@@ -1302,6 +1506,21 @@ export default function App() {
           <div className="p-3.5 space-y-4">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 mb-2">Workspace Navigation</p>
+              
+              {/* Quick Spotlight Search button */}
+              <button
+                onClick={() => setIsSearchOpen(true)}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium bg-[#050a18] hover:bg-[#142045] border border-cyan-500/40 text-slate-300 hover:text-white transition mb-2 shadow group"
+              >
+                <span className="flex items-center space-x-2">
+                  <Search className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                  <span>Search Options...</span>
+                </span>
+                <kbd className="text-[10px] font-mono text-cyan-400 bg-[#0c152e] border border-[#1d2f65] px-1.5 py-0.5 rounded">
+                  ⌘K
+                </kbd>
+              </button>
+
               <nav className="space-y-1">
                 <button
                   onClick={() => setActiveTab('map')}
@@ -1350,6 +1569,23 @@ export default function App() {
                     <span>Cargo Camera AI</span>
                   </span>
                   <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('awb')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
+                    activeTab === 'awb'
+                      ? 'bg-[#f77f00] text-white shadow-lg'
+                      : 'text-slate-300 hover:bg-[#142045] hover:text-white'
+                  }`}
+                >
+                  <span className="flex items-center space-x-2.5">
+                    <Box className="w-4 h-4 text-cyan-400" />
+                    <span>3D AWB Tracking</span>
+                  </span>
+                  <span className="text-[9px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-1.5 py-0.5 rounded font-mono font-bold">
+                    3D
+                  </span>
                 </button>
               </nav>
             </div>
@@ -1433,8 +1669,37 @@ export default function App() {
               <div className="flex-1 relative flex flex-col min-h-[460px] h-[520px] lg:h-full">
                 <div id="leaflet-map" className="w-full h-full"></div>
 
+                {/* 3D Vehicle Simulation Overlay directly anchored on GPS coordinates */}
+                {show3DMapOverlay && activeAWBRecord && (
+                  <Map3DVehicleOverlay
+                    shipment={activeAWBRecord}
+                    onClose={() => setShow3DMapOverlay(false)}
+                    onTrackInAWBHub={() => setActiveTab('awb')}
+                  />
+                )}
+
                 {/* Map Floating Control Toolbar */}
                 <div className="absolute top-3 right-3 z-[500] flex space-x-1.5">
+                  <button
+                    onClick={() => {
+                      setShow3DMapOverlay(prev => !prev);
+                      addToast(
+                        "3D Model Overlay",
+                        !show3DMapOverlay ? "3D vehicle WebGL simulation enabled." : "3D vehicle overlay minimized.",
+                        "cyan"
+                      );
+                    }}
+                    className={`border text-xs px-2.5 py-1 rounded-lg shadow font-medium flex items-center space-x-1 transition ${
+                      show3DMapOverlay
+                        ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border-cyan-400'
+                        : 'bg-[#050a18]/90 text-slate-500 border-[#1d2f65]'
+                    }`}
+                    title="Toggle 3D Vehicle WebGL GPS Model Overlay"
+                  >
+                    <Box className="w-3 h-3 text-cyan-400" />
+                    <span>🎮 3D Overlay</span>
+                  </button>
+
                   <button
                     onClick={() => setIsHudHidden(prev => !prev)}
                     className={`border text-xs px-2.5 py-1 rounded-lg shadow font-medium flex items-center space-x-1 transition ${
@@ -1525,6 +1790,19 @@ export default function App() {
                               <span className="text-slate-400">Carrier Tracked:</span>
                               <span className="font-mono text-[#f77f00] font-bold">{currentCarrier.id}</span>
                             </div>
+                            {currentCarrier.awbNumber && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-400">Linked AWB:</span>
+                                <button
+                                  onClick={() => setShow3DMapOverlay(true)}
+                                  title="View 3D WebGL Vehicle at GPS coordinates"
+                                  className="font-mono text-cyan-300 font-bold hover:underline flex items-center space-x-1"
+                                >
+                                  <span>{currentCarrier.awbNumber}</span>
+                                  <span className="text-[9px] bg-cyan-500/20 text-cyan-300 px-1 rounded">3D</span>
+                                </button>
+                              </div>
+                            )}
                             <div className="flex justify-between items-center">
                               <span className="text-slate-400">Dynamic Coords:</span>
                               <span className="font-mono text-cyan-400 font-bold">
@@ -2115,7 +2393,53 @@ export default function App() {
             </section>
           )}
 
+          {/* ================= 4. TAB: 3D AWB VEHICLE TRACKING HUB ================= */}
+          {activeTab === 'awb' && (
+            <AWBTrackingHub onOpenDevGuide={() => setIsDevGuideOpen(true)} />
+          )}
+
         </main>
+
+        {/* Mobile Friendly Bottom Nav Bar */}
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0c152e]/95 backdrop-blur-md border-t border-[#1d2f65] grid grid-cols-4 py-2 px-1 text-center">
+          <button
+            onClick={() => setActiveTab('map')}
+            className={`flex flex-col items-center justify-center py-1 transition ${
+              activeTab === 'map' ? 'text-[#f77f00]' : 'text-slate-400'
+            }`}
+          >
+            <Layers className="w-4 h-4 mb-0.5" />
+            <span className="text-[10px] font-medium">Map</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('awb')}
+            className={`flex flex-col items-center justify-center py-1 transition relative ${
+              activeTab === 'awb' ? 'text-[#f77f00]' : 'text-cyan-400'
+            }`}
+          >
+            <Box className="w-4 h-4 mb-0.5" />
+            <span className="text-[10px] font-medium">3D AWB</span>
+            <span className="absolute top-0 right-6 w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+          </button>
+          <button
+            onClick={() => setActiveTab('idcard')}
+            className={`flex flex-col items-center justify-center py-1 transition ${
+              activeTab === 'idcard' ? 'text-[#f77f00]' : 'text-slate-400'
+            }`}
+          >
+            <Fingerprint className="w-4 h-4 mb-0.5" />
+            <span className="text-[10px] font-medium">Digital ID</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('cargo')}
+            className={`flex flex-col items-center justify-center py-1 transition ${
+              activeTab === 'cargo' ? 'text-[#f77f00]' : 'text-slate-400'
+            }`}
+          >
+            <Camera className="w-4 h-4 mb-0.5" />
+            <span className="text-[10px] font-medium">Cargo AI</span>
+          </button>
+        </div>
       </div>
 
       {/* ================= MODAL 1: UNIVERSAL ENTITY INSPECTOR (FOR ALL ICONS) ================= */}
@@ -2593,6 +2917,47 @@ export default function App() {
           );
         })}
       </div>
+
+      {/* ================= UNIVERSAL SPOTLIGHT SEARCH MODAL ================= */}
+      <UniversalSearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onNavigateTab={tab => setActiveTab(tab)}
+        onSelectCarrier={id => handleSelectCarrier(id)}
+        onSelectHub={id => {
+          setHubFilter(id);
+          const hub = hubs.find(h => h.id === id);
+          if (hub && mapRef.current) {
+            mapRef.current.flyTo(hub.coords, 6, { duration: 1 });
+          }
+        }}
+        onSelectHazard={id => openUniversalInspector('hazard', id)}
+        onOpenDevGuide={() => setIsDevGuideOpen(true)}
+        onOpenAddShipment={() => setIsAddShipmentOpen(true)}
+        onOpenSimulator={() => setIsSimulatorOpen(true)}
+        onToggleThirdPartyBlock={toggleThirdPartyBlock}
+        onTriggerHazardLimitBreach={triggerHazardLimitBreach}
+        onZoom={zoomTo}
+        onToggleHud={() => setIsHudHidden(prev => !prev)}
+        onToggleHazards={() => setShowHazards(prev => !prev)}
+        fleet={fleet}
+        hubs={hubs}
+        hazards={hazards}
+        isThirdPartyBlocked={isThirdPartyBlocked}
+        supportPhone={SUPPORT_PHONE}
+      />
+
+      {/* ================= FLOATING AI ASSISTANT WIDGET ================= */}
+      <AIAssistantWidget
+        onOpenDevGuide={() => setIsDevGuideOpen(true)}
+        onOpenAWBHub={() => setActiveTab('awb')}
+      />
+
+      {/* ================= DEVELOPER HACKATHON INTEGRATION MODAL ================= */}
+      <DeveloperIntegrationModal
+        isOpen={isDevGuideOpen}
+        onClose={() => setIsDevGuideOpen(false)}
+      />
 
     </div>
   );
